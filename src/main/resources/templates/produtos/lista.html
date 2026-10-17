@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Cardápio - Produtos</title>
+</head>
+<body>
+
+<!--
+    th:fragment="content" é obrigatório.
+    O layout.html usa th:replace para incluir exatamente esse fragmento.
+    Sem ele, a página não abre.
+-->
+<div th:fragment="content">
+
+    <!-- Cabeçalho com título e botão para abrir o modal de novo produto -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold mb-0">
+            <i class="bi bi-pizza me-2 text-primary"></i>🍕 Produtos
+        </h2>
+        <!-- data-bs-target aponta para o id do modal abaixo; onclick limpa os campos antes de abrir -->
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalProduto" onclick="abrirNovo()">
+            <i class="bi bi-plus-lg me-1"></i> Novo Produto
+        </button>
+    </div>
+
+    <!-- Tabela de produtos — o tbody é preenchido pelo JavaScript ao carregar a página -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                <tr>
+                    <th class="ps-3">Nome</th>
+                    <th>Tipo</th>
+                    <th>Preço</th>
+                    <th>Ativo</th>
+                    <th class="text-end pe-4">Ações</th>
+                </tr>
+                </thead>
+                <!-- id="produtos-tabela" é usado pelo JS para inserir as linhas dinamicamente -->
+                <tbody id="produtos-tabela">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!--
+        Modal reutilizado para cadastro e edição.
+        abrirNovo() → limpa os campos, título "Novo Produto"
+        abrirEditar() → preenche os campos com os dados do produto selecionado
+    -->
+    <div class="modal fade" id="modalProduto" tabindex="-1" aria-labelledby="modalProdutoLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalProdutoLabel">Produto</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    <!-- Campo oculto: guarda o ID ao editar; vazio indica novo produto -->
+                    <input type="hidden" id="produtoId">
+
+                    <div class="mb-3">
+                        <label for="produtoNome" class="form-label">Nome</label>
+                        <input type="text" id="produtoNome" class="form-control" placeholder="Ex: Margherita" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="produtoTipo" class="form-label">Tipo</label>
+                        <select id="produtoTipo" class="form-select" required>
+                            <option value="" disabled selected>Selecione o tipo</option>
+                            <option value="Pizza">Pizza</option>
+                            <option value="Lanche">Lanche</option>
+                            <option value="Bebida">Bebida</option>
+                            <option value="Porção">Porção</option>
+                            <option value="Adicional">Adicional</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="produtoPreco" class="form-label">Preço (R$)</label>
+                        <!-- step="0.01" permite centavos; min="0.01" impede valor zero -->
+                        <input type="number" id="produtoPreco" class="form-control" placeholder="0,00" step="0.01" min="0.01" required>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <!-- checked por padrão: novo produto já começa ativo -->
+                        <input type="checkbox" id="produtoAtivo" class="form-check-input" checked>
+                        <label for="produtoAtivo" class="form-check-label">Produto ativo</label>
+                    </div>
+
+                    <!-- Alerta de erro: exibido pela função salvarProduto() se a validação falhar -->
+                    <div id="mensagemErro" class="alert alert-danger d-none"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success" onclick="salvarProduto()">
+                        <i class="bi bi-check-lg me-1"></i> Salvar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // URL base da API REST — ProdutoController está mapeado em /api/produtos
+        const API_URL = '/api/produtos';
+        const tabela = document.getElementById('produtos-tabela');
+
+        // Formata número para exibição em reais (ex: 29.9 → "R$ 29,90")
+        function formatarPreco(valor) {
+            return valor != null
+                ? 'R$ ' + parseFloat(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+                : '—';
+        }
+
+        // Busca todos os produtos na API (GET /api/produtos) e popula a tabela
+        async function carregarProdutos() {
+            const response = await fetch(API_URL);
+            const produtos = await response.json();
+            tabela.innerHTML = '';
+
+            if (produtos.length === 0) {
+                tabela.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                            Nenhum produto cadastrado.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            // Cria uma linha na tabela para cada produto retornado
+            produtos.forEach(p => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="ps-3 fw-semibold">${p.nome || '—'}</td>
+                    <td>${p.tipo || '—'}</td>
+                    <td>${formatarPreco(p.preco)}</td>
+                    <td>
+                        <!-- Badge verde se ativo, cinza se inativo -->
+                        <span class="badge ${p.ativo ? 'bg-success' : 'bg-secondary'}">
+                            ${p.ativo ? 'Sim' : 'Não'}
+                        </span>
+                    </td>
+                    <td class="text-end pe-4">
+                        <!-- Editar: passa os dados do produto para abrirEditar() preencher o modal -->
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="abrirEditar('${p.id}', '${(p.nome||'').replace(/'/g,"\\'")}', '${p.tipo||''}', ${p.preco||0}, ${p.ativo})">
+                            <i class="bi bi-pencil-fill"></i> Editar
+                        </button>
+                        <!-- Excluir: chama DELETE na API após confirmação -->
+                        <button class="btn btn-sm btn-outline-danger" onclick="excluirProduto('${p.id}')">
+                            <i class="bi bi-trash-fill"></i> Excluir
+                        </button>
+                    </td>
+                `;
+                tabela.appendChild(row);
+            });
+        }
+
+        // Prepara o modal para novo cadastro (limpa todos os campos)
+        function abrirNovo() {
+            document.getElementById('modalProdutoLabel').textContent = 'Novo Produto';
+            document.getElementById('produtoId').value = '';
+            document.getElementById('produtoNome').value = '';
+            document.getElementById('produtoTipo').value = '';
+            document.getElementById('produtoPreco').value = '';
+            document.getElementById('produtoAtivo').checked = true;
+            document.getElementById('mensagemErro').classList.add('d-none');
+        }
+
+        // Preenche o modal com os dados do produto escolhido e abre para edição
+        function abrirEditar(id, nome, tipo, preco, ativo) {
+            document.getElementById('modalProdutoLabel').textContent = 'Editar Produto';
+            document.getElementById('produtoId').value = id;
+            document.getElementById('produtoNome').value = nome;
+            document.getElementById('produtoTipo').value = tipo;
+            document.getElementById('produtoPreco').value = preco;
+            document.getElementById('produtoAtivo').checked = ativo;
+            document.getElementById('mensagemErro').classList.add('d-none');
+            new bootstrap.Modal(document.getElementById('modalProduto')).show();
+        }
+
+        // Salva o produto: POST se novo, PUT se editando (baseado na presença do ID)
+        async function salvarProduto() {
+            const id    = document.getElementById('produtoId').value;
+            const nome  = document.getElementById('produtoNome').value.trim();
+            const tipo  = document.getElementById('produtoTipo').value;
+            const preco = parseFloat(document.getElementById('produtoPreco').value);
+            const ativo = document.getElementById('produtoAtivo').checked;
+            const erroDiv = document.getElementById('mensagemErro');
+
+            // Validação antes de chamar a API
+            if (!nome || !tipo || isNaN(preco) || preco <= 0) {
+                erroDiv.textContent = 'Preencha todos os campos corretamente.';
+                erroDiv.classList.remove('d-none');
+                return;
+            }
+
+            const produto = { nome, tipo, preco, ativo };
+            const url    = id ? `${API_URL}/${id}` : API_URL;
+            const method = id ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(produto)
+            });
+
+            if (response.ok) {
+                // Fecha o modal e recarrega a tabela com os dados atualizados
+                bootstrap.Modal.getInstance(document.getElementById('modalProduto')).hide();
+                carregarProdutos();
+            } else {
+                erroDiv.textContent = 'Erro ao salvar o produto. Tente novamente.';
+                erroDiv.classList.remove('d-none');
+            }
+        }
+
+        // Exclui o produto via DELETE após confirmação do usuário
+        async function excluirProduto(id) {
+            if (confirm('Tem certeza que deseja excluir este produto?')) {
+                const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    carregarProdutos();
+                } else {
+                    alert('Erro ao excluir o produto.');
+                }
+            }
+        }
+
+        // Executa ao carregar a página para já exibir os produtos cadastrados
+        carregarProdutos();
+    </script>
+
+</div>
+</body>
+</html>
